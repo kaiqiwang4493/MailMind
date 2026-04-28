@@ -1,17 +1,18 @@
 import PhotosUI
+import PDFKit
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
 struct UploadView: View {
     @Environment(\.modelContext) private var modelContext
-
-    private let ocrService: OCRServicing = MockOCRService()
-    private let analysisService: MailAnalysisServicing = MockMailAnalysisService()
+    @AppStorage("openAIAPIKey") private var openAIAPIKey = ""
+    @AppStorage("openAIModel") private var openAIModel = "gpt-4.1-mini"
 
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var uploadedSources: [UploadedMailSource] = []
     @State private var isImportingPDF = false
+    @State private var isShowingAISettings = false
     @State private var isAnalyzing = false
     @State private var analysisError: String?
     @State private var latestRecord: MailRecord?
@@ -35,6 +36,21 @@ struct UploadView: View {
             }
             .background(MailMindTheme.background.ignoresSafeArea())
             .navigationTitle(latestRecord == nil ? "上传邮件" : "分析结果")
+            .toolbar {
+                if latestRecord == nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            isShowingAISettings = true
+                        } label: {
+                            Image(systemName: "gearshape")
+                        }
+                        .accessibilityLabel("AI 设置")
+                    }
+                }
+            }
+            .sheet(isPresented: $isShowingAISettings) {
+                AISettingsView()
+            }
             .fileImporter(isPresented: $isImportingPDF, allowedContentTypes: [.pdf], allowsMultipleSelection: false) { result in
                 handlePDFImport(result)
             }
@@ -186,12 +202,19 @@ struct UploadView: View {
         switch result {
         case .success(let urls):
             guard let url = urls.first else { return }
+            let didStartAccessing = url.startAccessingSecurityScopedResource()
+            defer {
+                if didStartAccessing {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            let data = try? Data(contentsOf: url)
             uploadedSources = [
                 UploadedMailSource(
                     type: .pdf,
                     displayName: url.lastPathComponent,
-                    pageCount: 1,
-                    data: try? Data(contentsOf: url)
+                    pageCount: data.flatMap { PDFDocument(data: $0)?.pageCount } ?? 1,
+                    data: data
                 )
             ]
             selectedPhotoItems = []
@@ -208,7 +231,12 @@ struct UploadView: View {
         defer { isAnalyzing = false }
 
         do {
+            let usesSample = uploadedSources.contains { $0.type == .sample }
+            let ocrService: OCRServicing = usesSample ? MockOCRService() : VisionOCRService()
             let extractedText = try await ocrService.extractText(from: uploadedSources)
+            let analysisService: MailAnalysisServicing = usesSample
+                ? MockMailAnalysisService()
+                : OpenAIMailAnalysisService(configuration: OpenAIConfiguration(apiKey: openAIAPIKey, model: openAIModel))
             let result = try await analysisService.analyze(text: extractedText, createdAt: .now)
             let sourceType = uploadedSources.first?.type ?? .sample
             let record = MailRecord(
@@ -217,14 +245,9 @@ struct UploadView: View {
                 pageCount: uploadedSources.reduce(0) { $0 + max($1.pageCount, 1) },
                 extractedText: extractedText,
                 summary: result.summary,
-                category: result.category
+                category: result.category,
+                suggestedTodos: result.todoDrafts
             )
-
-            for draft in result.todoDrafts {
-                let todo = TodoItem(title: draft.title, deadline: draft.deadline, mailSummary: result.summary, mailRecord: record)
-                record.todoItems.append(todo)
-                modelContext.insert(todo)
-            }
 
             modelContext.insert(record)
             try modelContext.save()
@@ -238,6 +261,43 @@ struct UploadView: View {
         selectedPhotoItems = []
         uploadedSources = []
         latestRecord = nil
+    }
+}
+
+private struct AISettingsView: View {
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("openAIAPIKey") private var openAIAPIKey = ""
+    @AppStorage("openAIModel") private var openAIModel = "gpt-4.1-mini"
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    SecureField("OpenAI API Key", text: $openAIAPIKey)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    TextField("Model", text: $openAIModel)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                } header: {
+                    Text("OpenAI")
+                } footer: {
+                    Text("开发测试阶段会从手机直接调用 OpenAI。真实发布前建议改为自己的后端代理，避免把 API Key 放在 App 里。")
+                }
+
+                Section {
+                    Text("推荐先使用 gpt-4.1-mini。照片和 PDF 会先在本机做 OCR，OpenAI 只接收识别后的英文文本。")
+                }
+            }
+            .navigationTitle("AI 设置")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") {
+                        dismiss()
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -275,6 +335,7 @@ private struct UploadActionRow: View {
 }
 
 private struct AnalysisResultView: View {
+    @Environment(\.modelContext) private var modelContext
     var record: MailRecord
     var onNewUpload: () -> Void
 
@@ -292,19 +353,34 @@ private struct AnalysisResultView: View {
             }
 
             SectionPanel(title: "需要处理") {
-                if record.todoItems.isEmpty {
+                if record.suggestedTodos.isEmpty {
                     Text("没有发现必须马上处理的事项。")
                         .font(.body)
                         .foregroundStyle(MailMindTheme.mutedText)
                 } else {
-                    ForEach(record.todoItems) { todo in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(todo.title)
-                                .font(.headline)
-                                .foregroundStyle(MailMindTheme.text)
-                            Label(todo.deadline.mailMindShortDate, systemImage: "calendar")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(MailMindTheme.urgent)
+                    ForEach(record.suggestedTodos) { suggestedTodo in
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(suggestedTodo.title)
+                                    .font(.headline)
+                                    .foregroundStyle(MailMindTheme.text)
+                                Label(suggestedTodo.deadline.mailMindShortDate, systemImage: "calendar")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(MailMindTheme.urgent)
+                            }
+
+                            Spacer(minLength: 8)
+
+                            Button {
+                                toggleTodo(suggestedTodo)
+                            } label: {
+                                Text(isAdded(suggestedTodo) ? "移除待办" : "添加待办")
+                                    .font(.subheadline.weight(.semibold))
+                                    .fixedSize(horizontal: true, vertical: false)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(isAdded(suggestedTodo) ? MailMindTheme.urgent : MailMindTheme.primary)
+                            .accessibilityIdentifier(isAdded(suggestedTodo) ? "removeSuggestedTodoButton" : "addSuggestedTodoButton")
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -324,5 +400,32 @@ private struct AnalysisResultView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("analysisResultView")
+    }
+
+    private func toggleTodo(_ suggestedTodo: SuggestedTodo) {
+        if let existingTodo = matchingTodo(for: suggestedTodo) {
+            modelContext.delete(existingTodo)
+        } else {
+            let todo = TodoItem(
+                title: suggestedTodo.title,
+                deadline: suggestedTodo.deadline,
+                mailSummary: record.summary,
+                mailRecord: record
+            )
+            record.todoItems.append(todo)
+            modelContext.insert(todo)
+        }
+
+        try? modelContext.save()
+    }
+
+    private func isAdded(_ suggestedTodo: SuggestedTodo) -> Bool {
+        matchingTodo(for: suggestedTodo) != nil
+    }
+
+    private func matchingTodo(for suggestedTodo: SuggestedTodo) -> TodoItem? {
+        record.todoItems.first {
+            $0.title == suggestedTodo.title && Calendar.current.isDate($0.deadline, inSameDayAs: suggestedTodo.deadline)
+        }
     }
 }

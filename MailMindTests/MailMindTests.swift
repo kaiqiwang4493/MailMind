@@ -66,4 +66,30 @@ struct MailMindTests {
         #expect(records.count == 1)
         #expect(records.first?.pageCount == 3)
     }
+
+    @Test @MainActor func suggestedTodosDoNotCreateTodoItemsUntilAdded() throws {
+        let container = try ModelContainer(
+            for: MailRecord.self,
+            TodoItem.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = container.mainContext
+        let draft = TodoDraft(title: "Pay renewal fee", deadline: Date())
+        let record = MailRecord(
+            sourceType: .pdf,
+            sourceNames: ["DMV.pdf"],
+            pageCount: 2,
+            extractedText: "Renewal notice",
+            summary: "这是一封续费通知。",
+            category: .government,
+            suggestedTodos: [draft]
+        )
+
+        context.insert(record)
+        try context.save()
+
+        let todos = try context.fetch(FetchDescriptor<TodoItem>())
+        #expect(record.suggestedTodos.count == 1)
+        #expect(todos.isEmpty)
+    }
 }

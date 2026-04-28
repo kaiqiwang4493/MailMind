@@ -78,20 +78,20 @@ private struct MailRecordDetailView: View {
                     CategoryBadge(category: record.category)
                 }
 
-                SectionPanel(title: "生成的 TodoItem") {
-                    if record.todoItems.isEmpty {
+                SectionPanel(title: "生成的待办事项") {
+                    if record.suggestedTodos.isEmpty {
                         Text("这封邮件没有生成待办事项。")
                             .font(.body)
                             .foregroundStyle(MailMindTheme.mutedText)
                     } else {
-                        ForEach(record.todoItems) { todo in
+                        ForEach(record.suggestedTodos) { todo in
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(todo.title)
                                     .font(.headline)
                                     .foregroundStyle(MailMindTheme.text)
                                 Label(todo.deadline.mailMindShortDate, systemImage: "calendar")
                                     .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(todo.isCompleted ? MailMindTheme.mutedText : MailMindTheme.primary)
+                                    .foregroundStyle(MailMindTheme.primary)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }

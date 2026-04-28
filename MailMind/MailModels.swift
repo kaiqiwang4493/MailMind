@@ -53,6 +53,8 @@ final class MailRecord {
     var extractedText: String
     var summary: String
     var categoryRawValue: String
+    var suggestedTodoTitles: [String]
+    var suggestedTodoDeadlines: [Date]
     var createdAt: Date
 
     @Relationship(deleteRule: .cascade, inverse: \TodoItem.mailRecord)
@@ -65,6 +67,7 @@ final class MailRecord {
         extractedText: String,
         summary: String,
         category: MailCategory,
+        suggestedTodos: [TodoDraft] = [],
         createdAt: Date = .now,
         todoItems: [TodoItem] = []
     ) {
@@ -74,6 +77,8 @@ final class MailRecord {
         self.extractedText = extractedText
         self.summary = summary
         self.categoryRawValue = category.rawValue
+        self.suggestedTodoTitles = suggestedTodos.map(\.title)
+        self.suggestedTodoDeadlines = suggestedTodos.map(\.deadline)
         self.createdAt = createdAt
         self.todoItems = todoItems
     }
@@ -85,6 +90,22 @@ final class MailRecord {
     var category: MailCategory {
         MailCategory(rawValue: categoryRawValue) ?? .other
     }
+
+    var suggestedTodos: [SuggestedTodo] {
+        suggestedTodoTitles.enumerated().map { index, title in
+            SuggestedTodo(
+                id: index,
+                title: title,
+                deadline: index < suggestedTodoDeadlines.count ? suggestedTodoDeadlines[index] : createdAt
+            )
+        }
+    }
+}
+
+struct SuggestedTodo: Identifiable, Equatable {
+    var id: Int
+    var title: String
+    var deadline: Date
 }
 
 @Model

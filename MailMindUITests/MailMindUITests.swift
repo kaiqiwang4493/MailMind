@@ -21,6 +21,7 @@ final class MailMindUITests: XCTestCase {
         createSampleMailAnalysis(in: app)
 
         XCTAssertTrue(app.staticTexts["邮件摘要"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["添加待办"].waitForExistence(timeout: 5))
     }
 
     @MainActor
@@ -28,6 +29,7 @@ final class MailMindUITests: XCTestCase {
         let app = launchApp()
 
         createSampleMailAnalysis(in: app)
+        addSuggestedTodo(in: app)
         app.tabBars.buttons["待办"].tap()
 
         let pendingTodo = app.staticTexts["核对账单金额并完成付款"]
@@ -50,6 +52,25 @@ final class MailMindUITests: XCTestCase {
         XCTAssertFalse(app.buttons["完成"].exists)
     }
 
+    @MainActor
+    func testSuggestedTodoCanBeAddedAndRemovedFromAnalysisResult() throws {
+        let app = launchApp()
+
+        createSampleMailAnalysis(in: app)
+        addSuggestedTodo(in: app)
+        XCTAssertTrue(app.buttons["移除待办"].waitForExistence(timeout: 5))
+
+        app.tabBars.buttons["待办"].tap()
+        XCTAssertTrue(app.staticTexts["核对账单金额并完成付款"].waitForExistence(timeout: 5))
+
+        app.tabBars.buttons["上传"].tap()
+        app.buttons["移除待办"].tap()
+        XCTAssertTrue(app.buttons["添加待办"].waitForExistence(timeout: 5))
+
+        app.tabBars.buttons["待办"].tap()
+        XCTAssertTrue(app.staticTexts["没有待完成事项"].waitForExistence(timeout: 5))
+    }
+
     @discardableResult
     private func launchApp() -> XCUIApplication {
         let app = XCUIApplication()
@@ -64,6 +85,12 @@ final class MailMindUITests: XCTestCase {
         XCTAssertTrue(submitButton.waitForExistence(timeout: 5))
         XCTAssertTrue(submitButton.waitForEnabled(timeout: 5))
         submitButton.tap()
+    }
+
+    private func addSuggestedTodo(in app: XCUIApplication) {
+        let addButton = app.buttons["添加待办"]
+        XCTAssertTrue(addButton.waitForExistence(timeout: 5))
+        addButton.tap()
     }
 
     @MainActor

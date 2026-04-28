@@ -154,13 +154,13 @@ private struct TodoDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                SectionPanel(title: "Todo Item") {
+                SectionPanel(title: "待办事项") {
                     Text(todo.title)
                         .font(.title2.weight(.semibold))
                         .foregroundStyle(MailMindTheme.text)
                 }
 
-                SectionPanel(title: "Deadline") {
+                SectionPanel(title: "截止日期") {
                     Label(todo.deadline.mailMindShortDate, systemImage: "calendar")
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(MailMindTheme.primary)
