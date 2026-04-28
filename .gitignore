@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+
+# Xcode user state
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+
+# Build products and local indexes
+build/
+DerivedData/
+*.moved-aside
+*.xccheckout
+
+# Swift Package Manager local build output
+.build/
+
+# Xcode archives and reports
+*.xcarchive
+*.xcresult
+
+# App packaging output
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Local environment files
+.env
+.env.*
+
