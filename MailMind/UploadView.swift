@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 
 struct UploadView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var authSession: AuthSession
     @AppStorage("openAIAPIKey") private var openAIAPIKey = ""
     @AppStorage("openAIModel") private var openAIModel = "gpt-4.1-mini"
 
@@ -28,7 +29,9 @@ struct UploadView: View {
                     } else {
                         header
                         uploadPicker
-                        selectedFilesPanel
+                        if !uploadedSources.isEmpty {
+                            selectedFilesPanel
+                        }
                         submitButton
                     }
                 }
@@ -37,6 +40,10 @@ struct UploadView: View {
             .background(MailMindTheme.background.ignoresSafeArea())
             .navigationTitle(latestRecord == nil ? "上传邮件" : "分析结果")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    AccountToolbarButton()
+                }
+
                 if latestRecord == nil {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
@@ -57,6 +64,11 @@ struct UploadView: View {
             .onChange(of: selectedPhotoItems) { _, newItems in
                 Task {
                     await handlePhotoSelection(newItems)
+                }
+            }
+            .onChange(of: authSession.ownerID) { _, ownerID in
+                if ownerID == nil {
+                    resetUpload()
                 }
             }
             .alert("分析失败", isPresented: .constant(analysisError != nil)) {
@@ -115,42 +127,36 @@ struct UploadView: View {
 
     private var selectedFilesPanel: some View {
         SectionPanel(title: "已选择") {
-            if uploadedSources.isEmpty {
-                Text("还没有选择照片或 PDF")
-                    .font(.body)
-                    .foregroundStyle(MailMindTheme.mutedText)
-            } else {
-                ForEach(uploadedSources) { source in
-                    HStack(spacing: 12) {
-                        Image(systemName: source.type == .pdf ? "doc.text" : "photo")
-                            .font(.title2)
-                            .foregroundStyle(MailMindTheme.primary)
-                            .frame(width: 34)
+            ForEach(uploadedSources) { source in
+                HStack(spacing: 12) {
+                    Image(systemName: source.type == .pdf ? "doc.text" : "photo")
+                        .font(.title2)
+                        .foregroundStyle(MailMindTheme.primary)
+                        .frame(width: 34)
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(source.displayName)
-                                .font(.headline)
-                                .foregroundStyle(MailMindTheme.text)
-                                .lineLimit(2)
-                            Text("\(source.pageCount) 页 · \(source.type.displayName)")
-                                .font(.subheadline)
-                                .foregroundStyle(MailMindTheme.mutedText)
-                        }
-
-                        Spacer()
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(source.displayName)
+                            .font(.headline)
+                            .foregroundStyle(MailMindTheme.text)
+                            .lineLimit(2)
+                        Text("\(source.pageCount) 页 · \(source.type.displayName)")
+                            .font(.subheadline)
+                            .foregroundStyle(MailMindTheme.mutedText)
                     }
-                    .padding(.vertical, 6)
-                }
 
-                Button(role: .destructive) {
-                    selectedPhotoItems = []
-                    uploadedSources = []
-                } label: {
-                    Label("清除选择", systemImage: "trash")
-                        .font(.headline)
+                    Spacer()
                 }
-                .padding(.top, 4)
+                .padding(.vertical, 6)
             }
+
+            Button(role: .destructive) {
+                selectedPhotoItems = []
+                uploadedSources = []
+            } label: {
+                Label("清除选择", systemImage: "trash")
+                    .font(.headline)
+            }
+            .padding(.top, 4)
         }
     }
 
@@ -239,7 +245,12 @@ struct UploadView: View {
                 : OpenAIMailAnalysisService(configuration: OpenAIConfiguration(apiKey: openAIAPIKey, model: openAIModel))
             let result = try await analysisService.analyze(text: extractedText, createdAt: .now)
             let sourceType = uploadedSources.first?.type ?? .sample
+            guard let ownerID = authSession.ownerID else {
+                throw AuthSessionError.signedOut
+            }
             let record = MailRecord(
+                ownerID: ownerID,
+                remoteID: authSession.state.isAuthenticated ? UUID().uuidString : nil,
                 sourceType: sourceType,
                 sourceNames: uploadedSources.map(\.displayName),
                 pageCount: uploadedSources.reduce(0) { $0 + max($1.pageCount, 1) },
@@ -251,6 +262,7 @@ struct UploadView: View {
 
             modelContext.insert(record)
             try modelContext.save()
+            authSession.saveMailRecordToCloud(record)
             latestRecord = record
         } catch {
             analysisError = error.localizedDescription
@@ -336,6 +348,7 @@ private struct UploadActionRow: View {
 
 private struct AnalysisResultView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var authSession: AuthSession
     var record: MailRecord
     var onNewUpload: () -> Void
 
@@ -404,9 +417,12 @@ private struct AnalysisResultView: View {
 
     private func toggleTodo(_ suggestedTodo: SuggestedTodo) {
         if let existingTodo = matchingTodo(for: suggestedTodo) {
+            authSession.deleteTodoItemFromCloud(existingTodo)
             modelContext.delete(existingTodo)
         } else {
             let todo = TodoItem(
+                ownerID: record.ownerID,
+                remoteID: record.remoteID == nil ? nil : UUID().uuidString,
                 title: suggestedTodo.title,
                 deadline: suggestedTodo.deadline,
                 mailSummary: record.summary,
@@ -414,6 +430,7 @@ private struct AnalysisResultView: View {
             )
             record.todoItems.append(todo)
             modelContext.insert(todo)
+            authSession.saveTodoItemToCloud(todo)
         }
 
         try? modelContext.save()

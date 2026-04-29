@@ -47,6 +47,8 @@ enum MailSourceType: String, Codable {
 
 @Model
 final class MailRecord {
+    var ownerID: String
+    var remoteID: String?
     var sourceTypeRawValue: String
     var sourceNames: [String]
     var pageCount: Int
@@ -56,11 +58,14 @@ final class MailRecord {
     var suggestedTodoTitles: [String]
     var suggestedTodoDeadlines: [Date]
     var createdAt: Date
+    var updatedAt: Date
 
     @Relationship(deleteRule: .cascade, inverse: \TodoItem.mailRecord)
     var todoItems: [TodoItem]
 
     init(
+        ownerID: String = AuthSession.guestOwnerID,
+        remoteID: String? = nil,
         sourceType: MailSourceType,
         sourceNames: [String],
         pageCount: Int,
@@ -69,8 +74,11 @@ final class MailRecord {
         category: MailCategory,
         suggestedTodos: [TodoDraft] = [],
         createdAt: Date = .now,
+        updatedAt: Date = .now,
         todoItems: [TodoItem] = []
     ) {
+        self.ownerID = ownerID
+        self.remoteID = remoteID
         self.sourceTypeRawValue = sourceType.rawValue
         self.sourceNames = sourceNames
         self.pageCount = pageCount
@@ -80,6 +88,7 @@ final class MailRecord {
         self.suggestedTodoTitles = suggestedTodos.map(\.title)
         self.suggestedTodoDeadlines = suggestedTodos.map(\.deadline)
         self.createdAt = createdAt
+        self.updatedAt = updatedAt
         self.todoItems = todoItems
     }
 
@@ -110,35 +119,45 @@ struct SuggestedTodo: Identifiable, Equatable {
 
 @Model
 final class TodoItem {
+    var ownerID: String
+    var remoteID: String?
     var title: String
     var deadline: Date
     var mailSummary: String
     var isCompleted: Bool
     var createdAt: Date
     var completedAt: Date?
+    var updatedAt: Date
     var mailRecord: MailRecord?
 
     init(
+        ownerID: String = AuthSession.guestOwnerID,
+        remoteID: String? = nil,
         title: String,
         deadline: Date,
         mailSummary: String,
         isCompleted: Bool = false,
         createdAt: Date = .now,
         completedAt: Date? = nil,
+        updatedAt: Date = .now,
         mailRecord: MailRecord? = nil
     ) {
+        self.ownerID = ownerID
+        self.remoteID = remoteID
         self.title = title
         self.deadline = deadline
         self.mailSummary = mailSummary
         self.isCompleted = isCompleted
         self.createdAt = createdAt
         self.completedAt = completedAt
+        self.updatedAt = updatedAt
         self.mailRecord = mailRecord
     }
 
     func markCompleted(at date: Date = .now) {
         isCompleted = true
         completedAt = date
+        updatedAt = date
     }
 }
 

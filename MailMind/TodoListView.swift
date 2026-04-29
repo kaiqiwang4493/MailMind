@@ -3,6 +3,7 @@ import SwiftUI
 
 struct TodoListView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var authSession: AuthSession
     @Query(sort: \TodoItem.deadline) private var todos: [TodoItem]
     @State private var selectedSegment: TodoSegment = .pending
     @State private var todoPendingCompletion: TodoItem?
@@ -63,6 +64,11 @@ struct TodoListView: View {
             }
             .background(MailMindTheme.background.ignoresSafeArea())
             .navigationTitle("待办事项")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    AccountToolbarButton()
+                }
+            }
             .alert("确认完成？", isPresented: $isConfirmingSwipeCompletion) {
                 Button("取消", role: .cancel) {
                     todoPendingCompletion = nil
@@ -77,22 +83,28 @@ struct TodoListView: View {
     }
 
     private var displayedTodos: [TodoItem] {
+        let ownerTodos = todos.filter { $0.ownerID == authSession.ownerID }
         switch selectedSegment {
         case .pending:
-            todos.pendingSortedByDeadline
+            return ownerTodos.pendingSortedByDeadline
         case .completed:
-            todos.filter(\.isCompleted).sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) }
+            return ownerTodos.filter(\.isCompleted).sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) }
         }
     }
 
     private func delete(_ todo: TodoItem) {
+        authSession.deleteTodoItemFromCloud(todo)
         modelContext.delete(todo)
         try? modelContext.save()
     }
 
     private func completePendingTodo() {
         todoPendingCompletion?.markCompleted()
+        todoPendingCompletion?.remoteID = todoPendingCompletion?.remoteID ?? (authSession.state.isAuthenticated ? UUID().uuidString : nil)
         try? modelContext.save()
+        if let todoPendingCompletion {
+            authSession.saveTodoItemToCloud(todoPendingCompletion)
+        }
         todoPendingCompletion = nil
     }
 }
@@ -147,6 +159,7 @@ private struct TodoRow: View {
 
 private struct TodoDetailView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var authSession: AuthSession
     @Bindable var todo: TodoItem
     @State private var isEditing = false
     @State private var isConfirmingCompletion = false
@@ -209,7 +222,9 @@ private struct TodoDetailView: View {
             Button("取消", role: .cancel) {}
             Button("确认完成") {
                 todo.markCompleted()
+                todo.remoteID = todo.remoteID ?? (authSession.state.isAuthenticated ? UUID().uuidString : nil)
                 try? modelContext.save()
+                authSession.saveTodoItemToCloud(todo)
             }
         } message: {
             Text("完成后，这个事项会移动到已完成列表。")
@@ -220,17 +235,18 @@ private struct TodoDetailView: View {
 private struct EditTodoView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var authSession: AuthSession
     @Bindable var todo: TodoItem
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Todo Item") {
+                Section("待办事项") {
                     TextField("需要做什么", text: $todo.title, axis: .vertical)
                         .lineLimit(2...4)
                 }
 
-                Section("Deadline") {
+                Section("截止日期") {
                     DatePicker("截止日期", selection: $todo.deadline, displayedComponents: .date)
                 }
             }
@@ -243,7 +259,10 @@ private struct EditTodoView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") {
+                        todo.updatedAt = .now
+                        todo.remoteID = todo.remoteID ?? (authSession.state.isAuthenticated ? UUID().uuidString : nil)
                         try? modelContext.save()
+                        authSession.saveTodoItemToCloud(todo)
                         dismiss()
                     }
                 }

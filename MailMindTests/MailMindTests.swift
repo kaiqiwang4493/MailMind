@@ -92,4 +92,88 @@ struct MailMindTests {
         #expect(record.suggestedTodos.count == 1)
         #expect(todos.isEmpty)
     }
+
+    @Test @MainActor func guestRecordsAndTodosUseGuestOwner() throws {
+        let todo = TodoItem(title: "Guest todo", deadline: Date(), mailSummary: "Guest summary")
+        let record = MailRecord(
+            sourceType: .sample,
+            sourceNames: ["Sample"],
+            pageCount: 1,
+            extractedText: "Sample",
+            summary: "访客摘要。",
+            category: .bill,
+            todoItems: [todo]
+        )
+
+        #expect(record.ownerID == AuthSession.guestOwnerID)
+        #expect(todo.ownerID == AuthSession.guestOwnerID)
+    }
+
+    @Test @MainActor func localFilteringUsesCurrentOwner() {
+        let userRecord = MailRecord(ownerID: "user-1", sourceType: .sample, sourceNames: ["User"], pageCount: 1, extractedText: "User", summary: "用户摘要。", category: .bill)
+        let guestRecord = MailRecord(ownerID: AuthSession.guestOwnerID, sourceType: .sample, sourceNames: ["Guest"], pageCount: 1, extractedText: "Guest", summary: "访客摘要。", category: .bill)
+
+        let visibleRecords = [userRecord, guestRecord].filter { $0.ownerID == "user-1" }
+
+        #expect(visibleRecords.map(\.summary) == ["用户摘要。"])
+    }
+
+    @Test @MainActor func exitingGuestDeletesGuestData() throws {
+        let container = try ModelContainer(
+            for: MailRecord.self,
+            TodoItem.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = container.mainContext
+        let session = AuthSession()
+        session.continueAsGuest()
+        context.insert(MailRecord(sourceType: .sample, sourceNames: ["Guest"], pageCount: 1, extractedText: "Guest", summary: "访客摘要。", category: .bill))
+        context.insert(TodoItem(title: "Guest todo", deadline: Date(), mailSummary: "Guest summary"))
+        try context.save()
+
+        session.exitGuest(modelContext: context)
+
+        #expect(try context.fetch(FetchDescriptor<MailRecord>()).isEmpty)
+        #expect(try context.fetch(FetchDescriptor<TodoItem>()).isEmpty)
+        #expect(session.state == .signedOut)
+    }
+
+    @Test @MainActor func guestMigrationAssignsAuthenticatedOwnerAndRemoteIDs() throws {
+        let container = try ModelContainer(
+            for: MailRecord.self,
+            TodoItem.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = container.mainContext
+        let session = AuthSession()
+        session.continueAsGuest()
+        let record = MailRecord(sourceType: .sample, sourceNames: ["Guest"], pageCount: 1, extractedText: "Guest", summary: "访客摘要。", category: .bill)
+        let todo = TodoItem(title: "Guest todo", deadline: Date(), mailSummary: "Guest summary", mailRecord: record)
+        record.todoItems.append(todo)
+        context.insert(record)
+        context.insert(todo)
+        try context.save()
+
+        try session.signInForTesting(uid: "user-1", modelContext: context)
+
+        #expect(record.ownerID == "user-1")
+        #expect(todo.ownerID == "user-1")
+        #expect(record.remoteID != nil)
+        #expect(todo.remoteID != nil)
+    }
+
+    @Test func syncDTOsMirrorLocalModels() {
+        let record = MailRecord(ownerID: "user-1", remoteID: "mail-1", sourceType: .sample, sourceNames: ["Sample"], pageCount: 1, extractedText: "Private OCR", summary: "同步摘要。", category: .government)
+        let todo = TodoItem(ownerID: "user-1", remoteID: "todo-1", title: "Pay fee", deadline: Date(), mailSummary: "同步摘要。", mailRecord: record)
+
+        let recordDTO = MailRecordDTO(record: record)
+        let todoDTO = TodoItemDTO(todo: todo)
+
+        #expect(recordDTO.id == "mail-1")
+        #expect(recordDTO.ownerID == "user-1")
+        #expect(recordDTO.summary == "同步摘要。")
+        #expect(todoDTO.id == "todo-1")
+        #expect(todoDTO.ownerID == "user-1")
+        #expect(todoDTO.mailRecordID == "mail-1")
+    }
 }

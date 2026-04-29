@@ -2,12 +2,13 @@ import SwiftData
 import SwiftUI
 
 struct HistoryView: View {
+    @EnvironmentObject private var authSession: AuthSession
     @Query(sort: \MailRecord.createdAt, order: .reverse) private var records: [MailRecord]
 
     var body: some View {
         NavigationStack {
             List {
-                ForEach(records) { record in
+                ForEach(displayedRecords) { record in
                     NavigationLink {
                         MailRecordDetailView(record: record)
                     } label: {
@@ -21,13 +22,22 @@ struct HistoryView: View {
             .scrollContentBackground(.hidden)
             .background(MailMindTheme.background.ignoresSafeArea())
             .navigationTitle("历史记录")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    AccountToolbarButton()
+                }
+            }
             .overlay {
-                if records.isEmpty {
+                if displayedRecords.isEmpty {
                     ContentUnavailableView("还没有历史记录", systemImage: "clock", description: Text("分析过的邮件会保存在这里。"))
                         .foregroundStyle(MailMindTheme.mutedText)
                 }
             }
         }
+    }
+
+    private var displayedRecords: [MailRecord] {
+        records.filter { $0.ownerID == authSession.ownerID }
     }
 }
 

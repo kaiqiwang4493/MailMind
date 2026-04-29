@@ -6,6 +6,14 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		E07CE6492FA2919300EF80CD /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = E07CE6482FA2919300EF80CD /* FirebaseAuth */; };
+		E07CE64C2FA291FB00EF80CD /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = E07CE64B2FA291FB00EF80CD /* GoogleSignInSwift */; };
+		E07CE6512FA29AA400EF80CD /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = E07CE6502FA29AA400EF80CD /* FirebaseCore */; };
+		E07CE6532FA29AAF00EF80CD /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = E07CE6522FA29AAF00EF80CD /* FirebaseFirestore */; };
+		E07CE6552FA29B1900EF80CD /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = E07CE6542FA29B1900EF80CD /* FirebaseAnalytics */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		E07CE5F52FA02CEA00EF80CD /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -29,9 +37,22 @@
 		E07CE5FE2FA02CEA00EF80CD /* MailMindUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MailMindUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		E07CE6562FA31A0000EF80CD /* Exceptions for "MailMind" folder in "MailMind" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = E07CE5E42FA02CE900EF80CD /* MailMind */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		E07CE5E72FA02CE900EF80CD /* MailMind */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E07CE6562FA31A0000EF80CD /* Exceptions for "MailMind" folder in "MailMind" target */,
+			);
 			path = MailMind;
 			sourceTree = "<group>";
 		};
@@ -52,6 +73,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E07CE6492FA2919300EF80CD /* FirebaseAuth in Frameworks */,
+				E07CE6532FA29AAF00EF80CD /* FirebaseFirestore in Frameworks */,
+				E07CE6512FA29AA400EF80CD /* FirebaseCore in Frameworks */,
+				E07CE6552FA29B1900EF80CD /* FirebaseAnalytics in Frameworks */,
+				E07CE64C2FA291FB00EF80CD /* GoogleSignInSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +104,7 @@
 				E07CE5E72FA02CE900EF80CD /* MailMind */,
 				E07CE5F72FA02CEA00EF80CD /* MailMindTests */,
 				E07CE6012FA02CEA00EF80CD /* MailMindUITests */,
+				E07CE64F2FA29AA400EF80CD /* Frameworks */,
 				E07CE5E62FA02CE900EF80CD /* Products */,
 			);
 			sourceTree = "<group>";
@@ -90,6 +117,13 @@
 				E07CE5FE2FA02CEA00EF80CD /* MailMindUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		E07CE64F2FA29AA400EF80CD /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -112,6 +146,11 @@
 			);
 			name = MailMind;
 			packageProductDependencies = (
+				E07CE6482FA2919300EF80CD /* FirebaseAuth */,
+				E07CE64B2FA291FB00EF80CD /* GoogleSignInSwift */,
+				E07CE6502FA29AA400EF80CD /* FirebaseCore */,
+				E07CE6522FA29AAF00EF80CD /* FirebaseFirestore */,
+				E07CE6542FA29B1900EF80CD /* FirebaseAnalytics */,
 			);
 			productName = MailMind;
 			productReference = E07CE5E52FA02CE900EF80CD /* MailMind.app */;
@@ -175,6 +214,11 @@
 				TargetAttributes = {
 					E07CE5E42FA02CE900EF80CD = {
 						CreatedOnToolsVersion = 26.2;
+						SystemCapabilities = {
+							com.apple.SignInWithApple = {
+								enabled = 1;
+							};
+						};
 					};
 					E07CE5F32FA02CEA00EF80CD = {
 						CreatedOnToolsVersion = 26.2;
@@ -195,6 +239,10 @@
 			);
 			mainGroup = E07CE5DC2FA02CE900EF80CD;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				E07CE6472FA2919300EF80CD /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				E07CE64A2FA291FB00EF80CD /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E07CE5E62FA02CE900EF80CD /* Products */;
 			projectDirPath = "";
@@ -390,6 +438,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = MailMind/MailMind.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = CDW76V8BMZ;
@@ -397,7 +446,8 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MailMind/Info.plist;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -435,6 +485,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = MailMind/MailMind.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = CDW76V8BMZ;
@@ -442,7 +493,8 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MailMind/Info.plist;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -617,6 +669,53 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		E07CE6472FA2919300EF80CD /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.12.1;
+			};
+		};
+		E07CE64A2FA291FB00EF80CD /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.1.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		E07CE6482FA2919300EF80CD /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E07CE6472FA2919300EF80CD /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		E07CE64B2FA291FB00EF80CD /* GoogleSignInSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E07CE64A2FA291FB00EF80CD /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignInSwift;
+		};
+		E07CE6502FA29AA400EF80CD /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E07CE6472FA2919300EF80CD /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		E07CE6522FA29AAF00EF80CD /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E07CE6472FA2919300EF80CD /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		E07CE6542FA29B1900EF80CD /* FirebaseAnalytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E07CE6472FA2919300EF80CD /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalytics;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = E07CE5DD2FA02CE900EF80CD /* Project object */;
 }

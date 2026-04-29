@@ -8,6 +8,7 @@ final class MailMindUITests: XCTestCase {
     @MainActor
     func testSubmitButtonStartsDisabled() throws {
         let app = launchApp()
+        enterGuestMode(in: app)
 
         let submitButton = app.buttons["submitAnalysisButton"]
         XCTAssertTrue(submitButton.waitForExistence(timeout: 5))
@@ -15,8 +16,41 @@ final class MailMindUITests: XCTestCase {
     }
 
     @MainActor
+    func testLaunchShowsLoginChoicesBeforeTabs() throws {
+        let app = launchApp()
+
+        XCTAssertTrue(app.buttons["guestModeButton"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["appleSignInButton"].exists)
+        XCTAssertTrue(app.buttons["googleSignInButton"].exists)
+        XCTAssertFalse(app.tabBars.buttons["上传"].exists)
+    }
+
+    @MainActor
+    func testGuestModeEntersMainTabs() throws {
+        let app = launchApp()
+
+        enterGuestMode(in: app)
+
+        XCTAssertTrue(app.tabBars.buttons["上传"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["submitAnalysisButton"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testDarkSystemAppearanceKeepsReadableLightUI() throws {
+        let app = launchApp(arguments: ["-uiTestingResetStore", "-AppleInterfaceStyle", "Dark"])
+
+        enterGuestMode(in: app)
+        app.tabBars.buttons["待办"].tap()
+
+        XCTAssertTrue(app.staticTexts["待办事项"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["待完成"].exists)
+        XCTAssertTrue(app.buttons["已完成"].exists)
+    }
+
+    @MainActor
     func testSampleMailEnablesSubmitAndShowsResult() throws {
         let app = launchApp()
+        enterGuestMode(in: app)
 
         createSampleMailAnalysis(in: app)
 
@@ -27,6 +61,7 @@ final class MailMindUITests: XCTestCase {
     @MainActor
     func testTodoSwipeActionsMatchCompletionState() throws {
         let app = launchApp()
+        enterGuestMode(in: app)
 
         createSampleMailAnalysis(in: app)
         addSuggestedTodo(in: app)
@@ -55,6 +90,7 @@ final class MailMindUITests: XCTestCase {
     @MainActor
     func testSuggestedTodoCanBeAddedAndRemovedFromAnalysisResult() throws {
         let app = launchApp()
+        enterGuestMode(in: app)
 
         createSampleMailAnalysis(in: app)
         addSuggestedTodo(in: app)
@@ -71,12 +107,60 @@ final class MailMindUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["没有待完成事项"].waitForExistence(timeout: 5))
     }
 
+    @MainActor
+    func testGuestExitClearsGuestData() throws {
+        let app = launchApp()
+        enterGuestMode(in: app)
+        createSampleMailAnalysis(in: app)
+
+        app.buttons["账号"].tap()
+        XCTAssertTrue(app.staticTexts["访客"].waitForExistence(timeout: 5))
+        app.buttons["退出访客并清除数据"].tap()
+        XCTAssertTrue(app.alerts["清除访客数据？"].waitForExistence(timeout: 5))
+        app.alerts["清除访客数据？"].buttons["清除并退出"].tap()
+
+        XCTAssertTrue(app.buttons["guestModeButton"].waitForExistence(timeout: 5))
+        enterGuestMode(in: app)
+        app.tabBars.buttons["历史"].tap()
+        XCTAssertTrue(app.staticTexts["还没有历史记录"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testMockGoogleSignInEntersMainTabs() throws {
+        let app = launchApp(arguments: ["-uiTestingResetStore", "-uiTestingMockAuth"])
+
+        app.buttons["googleSignInButton"].tap()
+
+        XCTAssertTrue(app.tabBars.buttons["上传"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testSignedInUserCanSignOutFromAnalysisResult() throws {
+        let app = launchApp(arguments: ["-uiTestingResetStore", "-uiTestingMockAuth"])
+
+        app.buttons["googleSignInButton"].tap()
+        XCTAssertTrue(app.tabBars.buttons["上传"].waitForExistence(timeout: 5))
+
+        createSampleMailAnalysis(in: app)
+        app.buttons["账号"].tap()
+        XCTAssertTrue(app.buttons["退出登录"].waitForExistence(timeout: 5))
+        app.buttons["退出登录"].tap()
+
+        XCTAssertTrue(app.buttons["guestModeButton"].waitForExistence(timeout: 5))
+    }
+
     @discardableResult
-    private func launchApp() -> XCUIApplication {
+    private func launchApp(arguments: [String] = ["-uiTestingResetStore"]) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-uiTestingResetStore"]
+        app.launchArguments = arguments
         app.launch()
         return app
+    }
+
+    private func enterGuestMode(in app: XCUIApplication) {
+        let guestButton = app.buttons["guestModeButton"]
+        XCTAssertTrue(guestButton.waitForExistence(timeout: 5))
+        guestButton.tap()
     }
 
     private func createSampleMailAnalysis(in app: XCUIApplication) {
