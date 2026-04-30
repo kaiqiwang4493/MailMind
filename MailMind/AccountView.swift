@@ -81,7 +81,15 @@ private struct AccountView: View {
                                 }
                             }
                         } label: {
-                            Label("使用 Google 登录并同步访客数据", systemImage: "g.circle")
+                            Label {
+                                Text("使用 Google 登录并同步访客数据")
+                            } icon: {
+                                Image("GoogleG")
+                                    .renderingMode(.template)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 22, height: 22)
+                            }
                         }
                     } footer: {
                         Text("登录成功后，当前访客模式下的历史记录和待办会自动迁移到账号。")
