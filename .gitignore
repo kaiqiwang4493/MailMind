@@ -28,3 +28,6 @@ DerivedData/
 .env
 .env.*
 
+# Firebase local configuration
+GoogleService-Info.plist
+**/GoogleService-Info.plist
