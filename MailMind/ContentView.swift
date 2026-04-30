@@ -145,7 +145,7 @@ private struct LoginView: View {
                     .font(.body)
                     .foregroundStyle(MailMindTheme.mutedText)
 
-                Spacer()
+                Spacer(minLength: 0)
             }
             .padding(24)
             .background(MailMindTheme.background.ignoresSafeArea())

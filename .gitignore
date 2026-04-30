@@ -15,6 +15,13 @@ DerivedData/
 # Swift Package Manager local build output
 .build/
 
+# Firebase Functions local/build output
+functions/node_modules/
+functions/lib/
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+
 # Xcode archives and reports
 *.xcarchive
 *.xcresult

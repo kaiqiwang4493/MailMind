@@ -16,6 +16,7 @@ struct MailMindApp: App {
 
     init() {
         FirebaseApp.configure()
+        FirebaseBackendEnvironment.configureEmulatorsIfNeeded()
     }
 
     var sharedModelContainer: ModelContainer = {

@@ -7,13 +7,10 @@ import UniformTypeIdentifiers
 struct UploadView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var authSession: AuthSession
-    @AppStorage("openAIAPIKey") private var openAIAPIKey = ""
-    @AppStorage("openAIModel") private var openAIModel = "gpt-4.1-mini"
 
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var uploadedSources: [UploadedMailSource] = []
     @State private var isImportingPDF = false
-    @State private var isShowingAISettings = false
     @State private var isAnalyzing = false
     @State private var analysisError: String?
     @State private var latestRecord: MailRecord?
@@ -44,19 +41,6 @@ struct UploadView: View {
                     AccountToolbarButton()
                 }
 
-                if latestRecord == nil {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            isShowingAISettings = true
-                        } label: {
-                            Image(systemName: "gearshape")
-                        }
-                        .accessibilityLabel("AI 设置")
-                    }
-                }
-            }
-            .sheet(isPresented: $isShowingAISettings) {
-                AISettingsView()
             }
             .fileImporter(isPresented: $isImportingPDF, allowedContentTypes: [.pdf], allowsMultipleSelection: false) { result in
                 handlePDFImport(result)
@@ -242,7 +226,7 @@ struct UploadView: View {
             let extractedText = try await ocrService.extractText(from: uploadedSources)
             let analysisService: MailAnalysisServicing = usesSample
                 ? MockMailAnalysisService()
-                : OpenAIMailAnalysisService(configuration: OpenAIConfiguration(apiKey: openAIAPIKey, model: openAIModel))
+                : BackendMailAnalysisService()
             let result = try await analysisService.analyze(text: extractedText, createdAt: .now)
             let sourceType = uploadedSources.first?.type ?? .sample
             guard let ownerID = authSession.ownerID else {
@@ -273,43 +257,6 @@ struct UploadView: View {
         selectedPhotoItems = []
         uploadedSources = []
         latestRecord = nil
-    }
-}
-
-private struct AISettingsView: View {
-    @Environment(\.dismiss) private var dismiss
-    @AppStorage("openAIAPIKey") private var openAIAPIKey = ""
-    @AppStorage("openAIModel") private var openAIModel = "gpt-4.1-mini"
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    SecureField("OpenAI API Key", text: $openAIAPIKey)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    TextField("Model", text: $openAIModel)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                } header: {
-                    Text("OpenAI")
-                } footer: {
-                    Text("开发测试阶段会从手机直接调用 OpenAI。真实发布前建议改为自己的后端代理，避免把 API Key 放在 App 里。")
-                }
-
-                Section {
-                    Text("推荐先使用 gpt-4.1-mini。照片和 PDF 会先在本机做 OCR，OpenAI 只接收识别后的英文文本。")
-                }
-            }
-            .navigationTitle("AI 设置")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") {
-                        dismiss()
-                    }
-                }
-            }
-        }
     }
 }
 

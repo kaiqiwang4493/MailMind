@@ -66,6 +66,7 @@ enum AuthSessionError: LocalizedError {
     case missingFirebaseClientID
     case missingGoogleToken
     case missingPresentationContext
+    case missingFirebaseUser
 
     var errorDescription: String? {
         switch self {
@@ -79,6 +80,8 @@ enum AuthSessionError: LocalizedError {
             "Google 登录没有返回有效凭证，请重试。"
         case .missingPresentationContext:
             "暂时无法打开 Google 登录页面，请稍后重试。"
+        case .missingFirebaseUser:
+            "Firebase 登录状态还没有准备好，请重新登录后再试。"
         }
     }
 }
@@ -120,11 +123,13 @@ final class AuthSession: ObservableObject {
     }
 
     func signOut(modelContext: ModelContext) {
+        resetExternalSignInState()
         clearLocalCache(modelContext: modelContext)
         state = .signedOut
     }
 
     func signOutFromPresentedUI(modelContext: ModelContext) {
+        resetExternalSignInState()
         state = .signedOut
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [weak self] in
             self?.clearLocalCache(modelContext: modelContext)
@@ -192,6 +197,7 @@ final class AuthSession: ObservableObject {
         do {
             let wasGuest = state.isGuest
             let uid = try await authenticate(provider: provider)
+            try await prepareFirebaseAuthForCloud(uid: uid)
             state = .authenticated(uid: uid, provider: provider)
 
             if wasGuest {
@@ -224,6 +230,7 @@ final class AuthSession: ObservableObject {
             throw AuthSessionError.missingFirebaseClientID
         }
 
+        resetExternalSignInState()
         GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
 
         guard let presentingViewController = UIApplication.shared.mailMindRootViewController else {
@@ -239,6 +246,27 @@ final class AuthSession: ObservableObject {
         let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
         let authResult = try await Auth.auth().signIn(with: credential)
         return authResult.user.uid
+    }
+
+    private func prepareFirebaseAuthForCloud(uid: String) async throws {
+        guard !CommandLine.arguments.contains("-uiTestingMockAuth") else {
+            return
+        }
+
+        guard let user = Auth.auth().currentUser, user.uid == uid else {
+            throw AuthSessionError.missingFirebaseUser
+        }
+
+        _ = try await user.getIDToken(forcingRefresh: true)
+    }
+
+    private func resetExternalSignInState() {
+        guard !CommandLine.arguments.contains("-uiTestingMockAuth") else {
+            return
+        }
+
+        try? Auth.auth().signOut()
+        GIDSignIn.sharedInstance.signOut()
     }
 
     private func migrateGuestData(to uid: String, modelContext: ModelContext) throws {
@@ -337,6 +365,9 @@ final class AuthSession: ObservableObject {
 
     private func runCloudOperation(_ operation: @escaping () async throws -> Void) async {
         do {
+            if let ownerID = cloudSyncOwnerID {
+                try await prepareFirebaseAuthForCloud(uid: ownerID)
+            }
             try await operation()
         } catch {
             authError = "同步失败，请稍后重试。"

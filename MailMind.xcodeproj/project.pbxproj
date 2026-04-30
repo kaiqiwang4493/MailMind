@@ -12,6 +12,7 @@
 		E07CE6512FA29AA400EF80CD /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = E07CE6502FA29AA400EF80CD /* FirebaseCore */; };
 		E07CE6532FA29AAF00EF80CD /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = E07CE6522FA29AAF00EF80CD /* FirebaseFirestore */; };
 		E07CE6552FA29B1900EF80CD /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = E07CE6542FA29B1900EF80CD /* FirebaseAnalytics */; };
+		E07CE6F92FA3FADF00EF80CD /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = E07CE6F82FA3FADF00EF80CD /* FirebaseFunctions */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -76,6 +77,7 @@
 				E07CE6492FA2919300EF80CD /* FirebaseAuth in Frameworks */,
 				E07CE6532FA29AAF00EF80CD /* FirebaseFirestore in Frameworks */,
 				E07CE6512FA29AA400EF80CD /* FirebaseCore in Frameworks */,
+				E07CE6F92FA3FADF00EF80CD /* FirebaseFunctions in Frameworks */,
 				E07CE6552FA29B1900EF80CD /* FirebaseAnalytics in Frameworks */,
 				E07CE64C2FA291FB00EF80CD /* GoogleSignInSwift in Frameworks */,
 			);
@@ -151,6 +153,7 @@
 				E07CE6502FA29AA400EF80CD /* FirebaseCore */,
 				E07CE6522FA29AAF00EF80CD /* FirebaseFirestore */,
 				E07CE6542FA29B1900EF80CD /* FirebaseAnalytics */,
+				E07CE6F82FA3FADF00EF80CD /* FirebaseFunctions */,
 			);
 			productName = MailMind;
 			productReference = E07CE5E52FA02CE900EF80CD /* MailMind.app */;
@@ -714,6 +717,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = E07CE6472FA2919300EF80CD /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseAnalytics;
+		};
+		E07CE6F82FA3FADF00EF80CD /* FirebaseFunctions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E07CE6472FA2919300EF80CD /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFunctions;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
