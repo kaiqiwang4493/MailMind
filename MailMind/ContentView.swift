@@ -98,13 +98,20 @@ private struct LoginView: View {
                             await authSession.signInWithGoogle(modelContext: modelContext)
                         }
                     } label: {
-                        Label("使用 Google 登录", systemImage: "g.circle")
-                            .font(.title3.weight(.semibold))
+                        HStack(spacing: 12) {
+                            Image("GoogleG")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 24, height: 24)
+                            Text("使用 Google 登录")
+                                .font(.title3.weight(.semibold))
+                        }
+                        .foregroundStyle(MailMindTheme.text)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
                     }
                     .buttonStyle(.bordered)
-                    .tint(MailMindTheme.primary)
+                    .tint(MailMindTheme.mutedText.opacity(0.28))
                     .accessibilityIdentifier("googleSignInButton")
 
                     Button {
