@@ -9,7 +9,7 @@ The app is designed for everyday mail such as bills, government notices, insuran
 - Upload mail from the photo library, including multiple photos for multi-page letters.
 - Import PDF files and analyze them as a single mail item.
 - Run on-device OCR with Apple Vision for images and rendered PDFs.
-- Use OpenAI's Responses API to summarize English mail in Simplified Chinese.
+- Use Gemini 3 Flash to summarize English mail in Simplified Chinese.
 - Categorize mail into practical categories such as bills, government, banking, insurance, healthcare, tax, legal, school, advertisement, personal, and other.
 - Extract actionable tasks and suggested deadlines from each mail item.
 - Add suggested tasks to a built-in to-do list.
@@ -17,7 +17,7 @@ The app is designed for everyday mail such as bills, government notices, insuran
 - View historical mail analyses and generated action items.
 - Continue as a guest with local-only data.
 - Sign in with Google through Firebase Authentication.
-- Sync authenticated user data through local Firebase Functions to the Firestore emulator.
+- Sync authenticated user data through Firebase Functions to Cloud Firestore.
 
 ## Tech Stack
 
@@ -27,8 +27,8 @@ The app is designed for everyday mail such as bills, government notices, insuran
 - **Local persistence:** SwiftData
 - **OCR:** Apple Vision, PDFKit, PhotosUI
 - **Authentication:** Firebase Authentication, Google Sign-In
-- **Cloud sync:** Firebase Functions + Cloud Firestore emulator
-- **AI analysis:** OpenAI Responses API with structured JSON output through backend functions
+- **Cloud sync:** Firebase Functions + Cloud Firestore
+- **AI analysis:** Gemini API with Gemini 3 Flash structured JSON output through backend functions
 - **Testing:** XCTest and XCUITest
 - **Package management:** Swift Package Manager
 
@@ -79,15 +79,7 @@ MailMind/
    node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
    ```
 
-9. Start the local emulators from the repository root:
-
-   ```bash
-   firebase emulators:start --only functions,firestore,auth
-   ```
-
-10. Run the app in Debug on iOS Simulator. Debug builds connect to local Auth and Functions emulators automatically.
-
-In Debug builds, open the account sheet and use **Debug 后台** to switch between the local emulators and deployed Firebase. Stop and rerun the app after changing this setting because Firebase Auth/Functions backend selection is applied during app startup.
+9. Run the app in Debug on iOS Simulator. Debug builds use the deployed Firebase backend by default.
 
 For production, Firestore rules should block direct client access because authenticated sync goes through backend functions using the Admin SDK:
 
@@ -105,7 +97,15 @@ service cloud.firestore {
 
 ## Backend Configuration
 
-The app does not store or ask users for an OpenAI API key. During local development, OCR runs on-device, then the extracted English text is sent to the local Functions emulator. The backend calls OpenAI and writes encrypted sensitive fields to the Firestore emulator.
+The app does not store or ask users for a Gemini API key. OCR runs on-device, then the extracted English text is sent to Firebase Functions. The backend calls Gemini 3 Flash and writes encrypted sensitive fields to Firestore.
+
+Set the production Gemini API key before deploying Functions:
+
+```bash
+firebase functions:secrets:set MAILMIND_GEMINI_API_KEY
+```
+
+For local Functions development, create `functions/.env` from `functions/env.example` and set `GEMINI_API_KEY`.
 
 Sensitive Firestore fields are encrypted with AES-256-GCM before storage:
 
@@ -149,4 +149,4 @@ Guest data is stored locally with SwiftData and is not synced to Firestore.
 
 ## Current Status
 
-MailMind currently supports local mail analysis, to-do management, Google sign-in, backend-backed AI analysis, and encrypted Firestore emulator sync for authenticated users. Apple sign-in is present in the UI but still requires provider implementation before it can be used.
+MailMind currently supports local mail OCR, to-do management, Google sign-in, backend-backed Gemini analysis, and encrypted Firestore sync for authenticated users. Apple sign-in is present in the UI but still requires provider implementation before it can be used.

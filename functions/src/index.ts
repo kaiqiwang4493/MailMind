@@ -11,8 +11,8 @@ import {
   todoItemToFirestore,
   TodoItemDTO,
 } from "./dtos";
-import {analyzeMailWithOpenAI} from "./openai";
-import {productionFieldEncryptionKey, productionOpenAIAPIKey} from "./secrets";
+import {analyzeMailWithGemini} from "./gemini";
+import {productionFieldEncryptionKey, productionGeminiAPIKey} from "./secrets";
 
 initializeApp();
 
@@ -35,7 +35,7 @@ function mapError(error: unknown): HttpsError {
   return new HttpsError("invalid-argument", message);
 }
 
-export const analyzeMail = onCall({...publicCallableOptions, secrets: [productionOpenAIAPIKey]}, async (request) => {
+export const analyzeMail = onCall({...publicCallableOptions, secrets: [productionGeminiAPIKey]}, async (request) => {
   try {
     requireUID(request.auth);
 
@@ -45,7 +45,7 @@ export const analyzeMail = onCall({...publicCallableOptions, secrets: [productio
       throw new HttpsError("invalid-argument", "text and createdAt are required strings.");
     }
 
-    return await analyzeMailWithOpenAI(text, createdAt);
+    return await analyzeMailWithGemini(text, createdAt);
   } catch (error) {
     throw mapError(error);
   }
