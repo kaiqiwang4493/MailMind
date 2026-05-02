@@ -1,8 +1,11 @@
+import AuthenticationServices
 import Combine
+import CryptoKit
 import FirebaseAuth
 import FirebaseCore
 import Foundation
 import GoogleSignIn
+import Security
 import SwiftData
 import SwiftUI
 import UIKit
@@ -67,6 +70,8 @@ enum AuthSessionError: LocalizedError {
     case missingGoogleToken
     case missingPresentationContext
     case missingFirebaseUser
+    case missingAppleIdentityToken
+    case invalidAppleIdentityToken
 
     var errorDescription: String? {
         switch self {
@@ -82,6 +87,10 @@ enum AuthSessionError: LocalizedError {
             "暂时无法打开 Google 登录页面，请稍后重试。"
         case .missingFirebaseUser:
             "Firebase 登录状态还没有准备好，请重新登录后再试。"
+        case .missingAppleIdentityToken:
+            "Apple 登录没有返回有效凭证，请重试。"
+        case .invalidAppleIdentityToken:
+            "Apple 登录凭证格式无效，请重试。"
         }
     }
 }
@@ -93,6 +102,7 @@ final class AuthSession: ObservableObject {
     @Published private(set) var state: AuthState = .signedOut
     @Published var authError: String?
     private let cloudSyncService: CloudSyncServicing
+    private var appleSignInCoordinator: AppleSignInCoordinator?
 
     init() {
         self.cloudSyncService = FirestoreCloudSyncService()
@@ -220,8 +230,59 @@ final class AuthSession: ObservableObject {
         switch provider {
         case .google:
             return try await authenticateWithGoogle()
-        case .apple, .mock:
+        case .apple:
+            return try await authenticateWithApple()
+        case .mock:
             throw AuthSessionError.providerUnavailable(provider.displayName)
+        }
+    }
+
+    private func authenticateWithApple() async throws -> String {
+        resetExternalSignInState()
+
+        let nonce = Self.randomNonceString()
+        let appleIDCredential = try await requestAppleCredential(nonce: nonce)
+
+        guard let appleIDToken = appleIDCredential.identityToken else {
+            throw AuthSessionError.missingAppleIdentityToken
+        }
+
+        guard let idTokenString = String(data: appleIDToken, encoding: .utf8) else {
+            throw AuthSessionError.invalidAppleIdentityToken
+        }
+
+        let credential = OAuthProvider.appleCredential(
+            withIDToken: idTokenString,
+            rawNonce: nonce,
+            fullName: appleIDCredential.fullName
+        )
+        let authResult = try await Auth.auth().signIn(with: credential)
+        return authResult.user.uid
+    }
+
+    private func requestAppleCredential(nonce: String) async throws -> ASAuthorizationAppleIDCredential {
+        guard let presentationAnchor = UIApplication.shared.mailMindPresentationAnchor else {
+            throw AuthSessionError.missingPresentationContext
+        }
+
+        let request = ASAuthorizationAppleIDProvider().createRequest()
+        request.requestedScopes = [.fullName, .email]
+        request.nonce = Self.sha256(nonce)
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let controller = ASAuthorizationController(authorizationRequests: [request])
+            let coordinator = AppleSignInCoordinator(
+                presentationAnchor: presentationAnchor,
+                controller: controller
+            ) { [weak self] result in
+                self?.appleSignInCoordinator = nil
+                continuation.resume(with: result)
+            }
+
+            appleSignInCoordinator = coordinator
+            controller.delegate = coordinator
+            controller.presentationContextProvider = coordinator
+            controller.performRequests()
         }
     }
 
@@ -267,6 +328,40 @@ final class AuthSession: ObservableObject {
 
         try? Auth.auth().signOut()
         GIDSignIn.sharedInstance.signOut()
+    }
+
+    private static func randomNonceString(length: Int = 32) -> String {
+        precondition(length > 0)
+        let charset = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
+        var result = ""
+        var remainingLength = length
+
+        while remainingLength > 0 {
+            var randoms = [UInt8](repeating: 0, count: 16)
+            let errorCode = SecRandomCopyBytes(kSecRandomDefault, randoms.count, &randoms)
+            if errorCode != errSecSuccess {
+                fatalError("Unable to generate nonce. SecRandomCopyBytes failed with OSStatus \(errorCode)")
+            }
+
+            randoms.forEach { random in
+                if remainingLength == 0 {
+                    return
+                }
+
+                if random < charset.count {
+                    result.append(charset[Int(random)])
+                    remainingLength -= 1
+                }
+            }
+        }
+
+        return result
+    }
+
+    private static func sha256(_ input: String) -> String {
+        let inputData = Data(input.utf8)
+        let hashedData = SHA256.hash(data: inputData)
+        return hashedData.map { String(format: "%02x", $0) }.joined()
     }
 
     private func migrateGuestData(to uid: String, modelContext: ModelContext) throws {
@@ -415,6 +510,13 @@ private extension MailRecordDTO {
 }
 
 private extension UIApplication {
+    var mailMindPresentationAnchor: ASPresentationAnchor? {
+        connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }
+    }
+
     var mailMindRootViewController: UIViewController? {
         connectedScenes
             .compactMap { $0 as? UIWindowScene }
@@ -422,6 +524,45 @@ private extension UIApplication {
             .first { $0.isKeyWindow }?
             .rootViewController?
             .topMostPresentedViewController
+    }
+}
+
+private final class AppleSignInCoordinator: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
+    private let presentationAnchor: ASPresentationAnchor
+    private let controller: ASAuthorizationController
+    private let completion: (Result<ASAuthorizationAppleIDCredential, Error>) -> Void
+
+    init(
+        presentationAnchor: ASPresentationAnchor,
+        controller: ASAuthorizationController,
+        completion: @escaping (Result<ASAuthorizationAppleIDCredential, Error>) -> Void
+    ) {
+        self.presentationAnchor = presentationAnchor
+        self.controller = controller
+        self.completion = completion
+    }
+
+    func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+        presentationAnchor
+    }
+
+    func authorizationController(
+        controller: ASAuthorizationController,
+        didCompleteWithAuthorization authorization: ASAuthorization
+    ) {
+        guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
+            completion(.failure(AuthSessionError.missingAppleIdentityToken))
+            return
+        }
+
+        completion(.success(credential))
+    }
+
+    func authorizationController(
+        controller: ASAuthorizationController,
+        didCompleteWithError error: Error
+    ) {
+        completion(.failure(error))
     }
 }
 

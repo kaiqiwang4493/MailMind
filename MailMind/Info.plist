@@ -25,7 +25,7 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.866846689065-597j5cnh571ipdp5b38f6vdr18kcmnq3</string>
+				<string>com.googleusercontent.apps.866846689065-jm1mgbijt2h1suk0uid7f0gfkhvi985u</string>
 			</array>
 		</dict>
 	</array>
@@ -38,8 +38,6 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
-	<key>UIUserInterfaceStyle</key>
-	<string>Light</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>
@@ -53,5 +51,7 @@
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 	</array>
+	<key>UIUserInterfaceStyle</key>
+	<string>Light</string>
 </dict>
 </plist>
