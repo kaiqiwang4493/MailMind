@@ -2,6 +2,7 @@ import PhotosUI
 import PDFKit
 import SwiftData
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct UploadView: View {
@@ -11,6 +12,7 @@ struct UploadView: View {
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var uploadedSources: [UploadedMailSource] = []
     @State private var isImportingPDF = false
+    @State private var isShowingCamera = false
     @State private var isAnalyzing = false
     @State private var analysisError: String?
     @State private var latestRecord: MailRecord?
@@ -44,6 +46,12 @@ struct UploadView: View {
             }
             .fileImporter(isPresented: $isImportingPDF, allowedContentTypes: [.pdf], allowsMultipleSelection: false) { result in
                 handlePDFImport(result)
+            }
+            .fullScreenCover(isPresented: $isShowingCamera) {
+                CameraCaptureView { image in
+                    handleCapturedImage(image)
+                }
+                .ignoresSafeArea()
             }
             .onChange(of: selectedPhotoItems) { _, newItems in
                 Task {
@@ -79,6 +87,14 @@ struct UploadView: View {
     private var uploadPicker: some View {
         SectionPanel(title: "选择邮件文件") {
             VStack(spacing: 12) {
+                Button {
+                    openCamera()
+                } label: {
+                    UploadActionRow(icon: "camera", title: "拍摄邮件照片", subtitle: "拍摄邮件照片并加入分析")
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("cameraCaptureButton")
+
                 PhotosPicker(selection: $selectedPhotoItems, maxSelectionCount: 12, matching: .images) {
                     UploadActionRow(icon: "photo.on.rectangle", title: "从相册选择多张照片", subtitle: "适合一封邮件有好几页")
                 }
@@ -86,25 +102,9 @@ struct UploadView: View {
                 Button {
                     isImportingPDF = true
                 } label: {
-                    UploadActionRow(icon: "doc.richtext", title: "上传 PDF 文件", subtitle: "一个 PDF 会作为一封邮件处理")
+                    UploadActionRow(icon: "doc.richtext", title: "上传 PDF 文件", subtitle: "PDF 作为一封邮件处理")
                 }
                 .buttonStyle(.plain)
-
-                Button {
-                    uploadedSources = [
-                        UploadedMailSource(type: .sample, displayName: "示例账单邮件", pageCount: 2, data: nil)
-                    ]
-                } label: {
-                    Label("使用示例邮件", systemImage: "sparkles")
-                        .font(.headline)
-                        .foregroundStyle(MailMindTheme.primary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(MailMindTheme.primarySoft)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("sampleMailButton")
             }
         }
     }
@@ -167,6 +167,37 @@ struct UploadView: View {
         .accessibilityIdentifier("submitAnalysisButton")
     }
 
+    private func openCamera() {
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            analysisError = "当前设备无法打开相机。请在真机上拍摄，或从相册选择照片。"
+            return
+        }
+
+        isShowingCamera = true
+    }
+
+    private func handleCapturedImage(_ image: UIImage) {
+        guard let data = image.jpegData(compressionQuality: 0.9) else {
+            analysisError = "无法读取拍摄的照片，请重试。"
+            return
+        }
+
+        if uploadedSources.contains(where: { $0.type == .pdf }) {
+            uploadedSources = []
+        }
+
+        selectedPhotoItems = []
+        latestRecord = nil
+        uploadedSources.append(
+            UploadedMailSource(
+                type: .photos,
+                displayName: "拍摄照片 \(uploadedSources.count + 1)",
+                pageCount: 1,
+                data: data
+            )
+        )
+    }
+
     @MainActor
     private func handlePhotoSelection(_ items: [PhotosPickerItem]) async {
         guard !items.isEmpty else { return }
@@ -221,14 +252,11 @@ struct UploadView: View {
         defer { isAnalyzing = false }
 
         do {
-            let usesSample = uploadedSources.contains { $0.type == .sample }
-            let ocrService: OCRServicing = usesSample ? MockOCRService() : VisionOCRService()
+            let ocrService: OCRServicing = VisionOCRService()
             let extractedText = try await ocrService.extractText(from: uploadedSources)
-            let analysisService: MailAnalysisServicing = usesSample
-                ? MockMailAnalysisService()
-                : BackendMailAnalysisService()
+            let analysisService: MailAnalysisServicing = BackendMailAnalysisService()
             let result = try await analysisService.analyze(text: extractedText, createdAt: .now)
-            let sourceType = uploadedSources.first?.type ?? .sample
+            let sourceType = uploadedSources.first?.type ?? .photos
             guard let ownerID = authSession.ownerID else {
                 throw AuthSessionError.signedOut
             }

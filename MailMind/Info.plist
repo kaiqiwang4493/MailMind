@@ -31,6 +31,10 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>MailMind 需要使用相机拍摄邮件照片，用于识别文字并生成摘要。</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>MailMind 使用 Face ID 解锁已登录的本机账号。</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

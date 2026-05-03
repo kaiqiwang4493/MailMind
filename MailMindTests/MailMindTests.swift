@@ -162,6 +162,131 @@ struct MailMindTests {
         #expect(todo.remoteID != nil)
     }
 
+    @Test @MainActor func restoreWithoutFirebaseUserLeavesLoginVisible() async throws {
+        let container = try inMemoryContainer()
+        let settings = InMemoryFaceIDUnlockSettingsStore()
+        settings.isFaceIDUnlockEnabled = true
+        settings.lastAuthenticatedProvider = .google
+        let session = AuthSession(
+            cloudSyncService: MockCloudSyncService(),
+            biometricAuthenticator: MockBiometricAuthenticator(),
+            faceIDSettingsStore: settings,
+            firebaseCurrentUserUIDProvider: { nil },
+            skipsFirebaseAuthValidation: true
+        )
+
+        await session.restoreSessionIfNeeded(modelContext: container.mainContext)
+
+        #expect(session.state == .signedOut)
+    }
+
+    @Test @MainActor func restoreWithFaceIDDisabledDoesNotRequireUnlock() async throws {
+        let container = try inMemoryContainer()
+        let settings = InMemoryFaceIDUnlockSettingsStore()
+        settings.lastAuthenticatedProvider = .google
+        let session = AuthSession(
+            cloudSyncService: MockCloudSyncService(),
+            biometricAuthenticator: MockBiometricAuthenticator(),
+            faceIDSettingsStore: settings,
+            firebaseCurrentUserUIDProvider: { "user-1" },
+            skipsFirebaseAuthValidation: true
+        )
+
+        await session.restoreSessionIfNeeded(modelContext: container.mainContext)
+
+        #expect(session.state == .signedOut)
+    }
+
+    @Test @MainActor func restoreWithFaceIDEnabledRequiresLocalUnlock() async throws {
+        let container = try inMemoryContainer()
+        let settings = InMemoryFaceIDUnlockSettingsStore()
+        settings.isFaceIDUnlockEnabled = true
+        settings.lastAuthenticatedProvider = .apple
+        let session = AuthSession(
+            cloudSyncService: MockCloudSyncService(),
+            biometricAuthenticator: MockBiometricAuthenticator(),
+            faceIDSettingsStore: settings,
+            firebaseCurrentUserUIDProvider: { "user-1" },
+            skipsFirebaseAuthValidation: true
+        )
+
+        await session.restoreSessionIfNeeded(modelContext: container.mainContext)
+
+        #expect(session.state == .localUnlockRequired(uid: "user-1", provider: .apple))
+    }
+
+    @Test @MainActor func successfulFaceIDUnlockRestoresAuthenticatedSession() async throws {
+        let container = try inMemoryContainer()
+        let settings = InMemoryFaceIDUnlockSettingsStore()
+        settings.isFaceIDUnlockEnabled = true
+        settings.lastAuthenticatedProvider = .google
+        let session = AuthSession(
+            cloudSyncService: MockCloudSyncService(),
+            biometricAuthenticator: MockBiometricAuthenticator(authenticationSucceeds: true),
+            faceIDSettingsStore: settings,
+            firebaseCurrentUserUIDProvider: { "user-1" },
+            skipsFirebaseAuthValidation: true
+        )
+
+        await session.restoreSessionIfNeeded(modelContext: container.mainContext)
+        await session.unlockWithFaceID(modelContext: container.mainContext)
+
+        #expect(session.state == .authenticated(uid: "user-1", provider: .google))
+    }
+
+    @Test @MainActor func failedFaceIDUnlockKeepsSessionAvailableForRetry() async throws {
+        let container = try inMemoryContainer()
+        let settings = InMemoryFaceIDUnlockSettingsStore()
+        settings.isFaceIDUnlockEnabled = true
+        settings.lastAuthenticatedProvider = .google
+        let session = AuthSession(
+            cloudSyncService: MockCloudSyncService(),
+            biometricAuthenticator: MockBiometricAuthenticator(authenticationSucceeds: false),
+            faceIDSettingsStore: settings,
+            firebaseCurrentUserUIDProvider: { "user-1" },
+            skipsFirebaseAuthValidation: true
+        )
+
+        await session.restoreSessionIfNeeded(modelContext: container.mainContext)
+        await session.unlockWithFaceID(modelContext: container.mainContext)
+
+        #expect(session.state == .localUnlockRequired(uid: "user-1", provider: .google))
+        #expect(settings.isFaceIDUnlockEnabled)
+        #expect(settings.lastAuthenticatedProvider == .google)
+    }
+
+    @Test @MainActor func enablingFaceIDFromAccountRequiresSuccessfulBiometricVerification() async throws {
+        let settings = InMemoryFaceIDUnlockSettingsStore()
+        let session = AuthSession(
+            cloudSyncService: MockCloudSyncService(),
+            biometricAuthenticator: MockBiometricAuthenticator(authenticationSucceeds: true),
+            faceIDSettingsStore: settings,
+            skipsFirebaseAuthValidation: true
+        )
+
+        try session.signInForTesting(uid: "user-1", modelContext: try inMemoryContainer().mainContext)
+        await session.updateFaceIDUnlockFromAccount(isEnabled: true)
+
+        #expect(session.isFaceIDUnlockEnabled)
+        #expect(settings.lastAuthenticatedProvider == .mock)
+    }
+
+    @Test @MainActor func failedAccountFaceIDVerificationLeavesSwitchOff() async throws {
+        let settings = InMemoryFaceIDUnlockSettingsStore()
+        let session = AuthSession(
+            cloudSyncService: MockCloudSyncService(),
+            biometricAuthenticator: MockBiometricAuthenticator(authenticationSucceeds: false),
+            faceIDSettingsStore: settings,
+            skipsFirebaseAuthValidation: true
+        )
+
+        try session.signInForTesting(uid: "user-1", modelContext: try inMemoryContainer().mainContext)
+        await session.updateFaceIDUnlockFromAccount(isEnabled: true)
+
+        #expect(!session.isFaceIDUnlockEnabled)
+        #expect(!settings.isFaceIDUnlockEnabled)
+    }
+
     @Test func syncDTOsMirrorLocalModels() {
         let record = MailRecord(ownerID: "user-1", remoteID: "mail-1", sourceType: .sample, sourceNames: ["Sample"], pageCount: 1, extractedText: "Private OCR", summary: "同步摘要。", category: .government)
         let todo = TodoItem(ownerID: "user-1", remoteID: "todo-1", title: "Pay fee", deadline: Date(), mailSummary: "同步摘要。", mailRecord: record)
@@ -176,4 +301,52 @@ struct MailMindTests {
         #expect(todoDTO.ownerID == "user-1")
         #expect(todoDTO.mailRecordID == "mail-1")
     }
+
+    @MainActor
+    private func inMemoryContainer() throws -> ModelContainer {
+        try ModelContainer(
+            for: MailRecord.self,
+            TodoItem.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+    }
+}
+
+private struct MockBiometricAuthenticator: LocalBiometricAuthenticating {
+    var canUseFaceIDResult = true
+    var authenticationSucceeds = true
+
+    func canUseFaceID() -> Bool {
+        canUseFaceIDResult
+    }
+
+    func authenticateForMailMindUnlock() async throws {
+        if !authenticationSucceeds {
+            throw AuthSessionError.faceIDAuthenticationFailed
+        }
+    }
+}
+
+private final class InMemoryFaceIDUnlockSettingsStore: FaceIDUnlockSettingsStoring {
+    var isFaceIDUnlockEnabled = false
+    var lastAuthenticatedProvider: AuthProvider?
+
+    func clear() {
+        isFaceIDUnlockEnabled = false
+        lastAuthenticatedProvider = nil
+    }
+}
+
+private struct MockCloudSyncService: CloudSyncServicing {
+    func loadMailRecords(ownerID: String) async throws -> [MailRecordDTO] {
+        []
+    }
+
+    func loadTodoItems(ownerID: String) async throws -> [TodoItemDTO] {
+        []
+    }
+
+    func saveMailRecord(_ record: MailRecordDTO, ownerID: String) async throws {}
+    func saveTodoItem(_ todo: TodoItemDTO, ownerID: String) async throws {}
+    func deleteTodoItem(remoteID: String, ownerID: String) async throws {}
 }

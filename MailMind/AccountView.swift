@@ -40,6 +40,7 @@ private struct AccountView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @State private var isConfirmingGuestExit = false
+    @State private var isUpdatingFaceIDUnlock = false
     let exitGuest: () -> Void
     let signOut: () -> Void
 
@@ -93,6 +94,32 @@ private struct AccountView: View {
                         }
                     } footer: {
                         Text("登录成功后，当前访客模式下的历史记录和待办会自动迁移到账号。")
+                    }
+                }
+
+                if authSession.state.isAuthenticated {
+                    Section {
+                        Toggle(isOn: Binding(
+                            get: {
+                                authSession.isFaceIDUnlockEnabled
+                            },
+                            set: { newValue in
+                                guard !isUpdatingFaceIDUnlock else { return }
+                                isUpdatingFaceIDUnlock = true
+                                Task {
+                                    await authSession.updateFaceIDUnlockFromAccount(isEnabled: newValue)
+                                    isUpdatingFaceIDUnlock = false
+                                }
+                            }
+                        )) {
+                            Label("Face ID", systemImage: "faceid")
+                        }
+                        .disabled(isUpdatingFaceIDUnlock)
+                        .accessibilityIdentifier("faceIDAccountToggle")
+                    } header: {
+                        Text("安全")
+                    } footer: {
+                        Text("打开后，重新打开 MailMind 时会先使用 Face ID 验证本机登录状态。")
                     }
                 }
 

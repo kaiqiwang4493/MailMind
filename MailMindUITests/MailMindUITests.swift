@@ -135,6 +135,41 @@ final class MailMindUITests: XCTestCase {
     }
 
     @MainActor
+    func testFaceIDUnlockRestoresExistingMockSession() throws {
+        let app = launchApp(arguments: [
+            "-uiTestingResetStore",
+            "-uiTestingExistingAuth",
+            "-uiTestingFaceIDEnabled",
+            "-uiTestingFaceIDSuccess"
+        ])
+
+        XCTAssertTrue(app.tabBars.buttons["上传"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testFaceIDUnlockFailureStaysOnUnlockPageForRetry() throws {
+        let app = launchApp(arguments: [
+            "-uiTestingResetStore",
+            "-uiTestingExistingAuth",
+            "-uiTestingFaceIDEnabled",
+            "-uiTestingFaceIDFailure"
+        ])
+
+        XCTAssertTrue(app.alerts["提示"].waitForExistence(timeout: 5))
+        app.alerts["提示"].buttons["知道了"].tap()
+        XCTAssertTrue(app.buttons["faceIDUnlockButton"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["signInAgainButton"].exists)
+
+        app.buttons["faceIDUnlockButton"].tap()
+        XCTAssertTrue(app.alerts["提示"].waitForExistence(timeout: 5))
+        app.alerts["提示"].buttons["知道了"].tap()
+        app.buttons["signInAgainButton"].tap()
+        XCTAssertTrue(app.buttons["guestModeButton"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["appleSignInButton"].exists)
+        XCTAssertTrue(app.buttons["googleSignInButton"].exists)
+    }
+
+    @MainActor
     func testSignedInUserCanSignOutFromAnalysisResult() throws {
         let app = launchApp(arguments: ["-uiTestingResetStore", "-uiTestingMockAuth"])
 

@@ -5,6 +5,7 @@ import FirebaseAuth
 import FirebaseCore
 import Foundation
 import GoogleSignIn
+import LocalAuthentication
 import Security
 import SwiftData
 import SwiftUI
@@ -27,6 +28,7 @@ enum AuthProvider: String, Codable {
 enum AuthState: Equatable {
     case signedOut
     case guest
+    case localUnlockRequired(uid: String, provider: AuthProvider)
     case authenticated(uid: String, provider: AuthProvider)
 
     var ownerID: String? {
@@ -35,6 +37,8 @@ enum AuthState: Equatable {
             nil
         case .guest:
             AuthSession.guestOwnerID
+        case .localUnlockRequired:
+            nil
         case .authenticated(let uid, _):
             uid
         }
@@ -46,6 +50,8 @@ enum AuthState: Equatable {
             "未登录"
         case .guest:
             "访客"
+        case .localUnlockRequired:
+            "需要 Face ID 解锁"
         case .authenticated(_, let provider):
             "\(provider.displayName) 账号"
         }
@@ -61,6 +67,13 @@ enum AuthState: Equatable {
         }
         return false
     }
+
+    var requiresLocalUnlock: Bool {
+        if case .localUnlockRequired = self {
+            return true
+        }
+        return false
+    }
 }
 
 enum AuthSessionError: LocalizedError {
@@ -72,6 +85,8 @@ enum AuthSessionError: LocalizedError {
     case missingFirebaseUser
     case missingAppleIdentityToken
     case invalidAppleIdentityToken
+    case faceIDUnavailable
+    case faceIDAuthenticationFailed
 
     var errorDescription: String? {
         switch self {
@@ -91,7 +106,111 @@ enum AuthSessionError: LocalizedError {
             "Apple 登录没有返回有效凭证，请重试。"
         case .invalidAppleIdentityToken:
             "Apple 登录凭证格式无效，请重试。"
+        case .faceIDUnavailable:
+            "这台设备暂时无法使用 Face ID。"
+        case .faceIDAuthenticationFailed:
+            "Face ID 验证失败，请重试。"
         }
+    }
+}
+
+protocol LocalBiometricAuthenticating {
+    func canUseFaceID() -> Bool
+    func authenticateForMailMindUnlock() async throws
+}
+
+struct LocalBiometricAuthenticator: LocalBiometricAuthenticating {
+    func canUseFaceID() -> Bool {
+        if CommandLine.arguments.contains("-uiTestingFaceIDUnavailable") {
+            return false
+        }
+
+        if CommandLine.arguments.contains("-uiTestingFaceIDSuccess") ||
+            CommandLine.arguments.contains("-uiTestingFaceIDFailure") {
+            return true
+        }
+
+        let context = LAContext()
+        var error: NSError?
+        return context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
+            && context.biometryType == .faceID
+    }
+
+    func authenticateForMailMindUnlock() async throws {
+        if CommandLine.arguments.contains("-uiTestingFaceIDSuccess") {
+            return
+        }
+
+        if CommandLine.arguments.contains("-uiTestingFaceIDFailure") ||
+            CommandLine.arguments.contains("-uiTestingFaceIDUnavailable") {
+            throw AuthSessionError.faceIDAuthenticationFailed
+        }
+
+        let context = LAContext()
+        context.localizedCancelTitle = "重新验证登陆"
+        var error: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error),
+              context.biometryType == .faceID else {
+            throw AuthSessionError.faceIDUnavailable
+        }
+
+        let didAuthenticate = try await context.evaluatePolicy(
+            .deviceOwnerAuthenticationWithBiometrics,
+            localizedReason: "使用 Face ID 解锁 MailMind"
+        )
+        if !didAuthenticate {
+            throw AuthSessionError.faceIDAuthenticationFailed
+        }
+    }
+}
+
+protocol FaceIDUnlockSettingsStoring {
+    var isFaceIDUnlockEnabled: Bool { get set }
+    var lastAuthenticatedProvider: AuthProvider? { get set }
+    func clear()
+}
+
+struct UserDefaultsFaceIDUnlockSettingsStore: FaceIDUnlockSettingsStoring {
+    private enum Key {
+        static let isEnabled = "MailMind.isFaceIDUnlockEnabled"
+        static let provider = "MailMind.lastAuthenticatedProvider"
+    }
+
+    private let userDefaults: UserDefaults
+
+    init(userDefaults: UserDefaults = .standard) {
+        self.userDefaults = userDefaults
+        if CommandLine.arguments.contains("-uiTestingResetStore") {
+            self.userDefaults.removeObject(forKey: Key.isEnabled)
+            self.userDefaults.removeObject(forKey: Key.provider)
+        }
+        if CommandLine.arguments.contains("-uiTestingFaceIDEnabled") {
+            self.userDefaults.set(true, forKey: Key.isEnabled)
+            self.userDefaults.set(AuthProvider.google.rawValue, forKey: Key.provider)
+        }
+    }
+
+    var isFaceIDUnlockEnabled: Bool {
+        get { userDefaults.bool(forKey: Key.isEnabled) }
+        set { userDefaults.set(newValue, forKey: Key.isEnabled) }
+    }
+
+    var lastAuthenticatedProvider: AuthProvider? {
+        get {
+            userDefaults.string(forKey: Key.provider).flatMap(AuthProvider.init(rawValue:))
+        }
+        set {
+            if let newValue {
+                userDefaults.set(newValue.rawValue, forKey: Key.provider)
+            } else {
+                userDefaults.removeObject(forKey: Key.provider)
+            }
+        }
+    }
+
+    func clear() {
+        userDefaults.removeObject(forKey: Key.isEnabled)
+        userDefaults.removeObject(forKey: Key.provider)
     }
 }
 
@@ -101,15 +220,47 @@ final class AuthSession: ObservableObject {
 
     @Published private(set) var state: AuthState = .signedOut
     @Published var authError: String?
+    @Published var shouldOfferFaceIDUnlock = false
+    @Published private(set) var isFaceIDUnlockEnabled = false
     private let cloudSyncService: CloudSyncServicing
+    private let biometricAuthenticator: LocalBiometricAuthenticating
+    private var faceIDSettingsStore: FaceIDUnlockSettingsStoring
+    private let firebaseCurrentUserUIDProvider: () -> String?
+    private let skipsFirebaseAuthValidation: Bool
     private var appleSignInCoordinator: AppleSignInCoordinator?
 
     init() {
         self.cloudSyncService = FirestoreCloudSyncService()
+        self.biometricAuthenticator = LocalBiometricAuthenticator()
+        self.faceIDSettingsStore = UserDefaultsFaceIDUnlockSettingsStore()
+        self.isFaceIDUnlockEnabled = faceIDSettingsStore.isFaceIDUnlockEnabled
+        self.firebaseCurrentUserUIDProvider = {
+            if CommandLine.arguments.contains("-uiTestingExistingAuth") {
+                return "ui-test-user"
+            }
+            return Auth.auth().currentUser?.uid
+        }
+        self.skipsFirebaseAuthValidation = false
     }
 
-    init(cloudSyncService: CloudSyncServicing) {
+    init(
+        cloudSyncService: CloudSyncServicing,
+        biometricAuthenticator: LocalBiometricAuthenticating = LocalBiometricAuthenticator(),
+        faceIDSettingsStore: FaceIDUnlockSettingsStoring = UserDefaultsFaceIDUnlockSettingsStore(),
+        firebaseCurrentUserUIDProvider: @escaping () -> String? = {
+            if CommandLine.arguments.contains("-uiTestingExistingAuth") {
+                return "ui-test-user"
+            }
+            return Auth.auth().currentUser?.uid
+        },
+        skipsFirebaseAuthValidation: Bool = false
+    ) {
         self.cloudSyncService = cloudSyncService
+        self.biometricAuthenticator = biometricAuthenticator
+        self.faceIDSettingsStore = faceIDSettingsStore
+        self.isFaceIDUnlockEnabled = faceIDSettingsStore.isFaceIDUnlockEnabled
+        self.firebaseCurrentUserUIDProvider = firebaseCurrentUserUIDProvider
+        self.skipsFirebaseAuthValidation = skipsFirebaseAuthValidation
     }
 
     var ownerID: String? {
@@ -124,6 +275,85 @@ final class AuthSession: ObservableObject {
         state = .guest
     }
 
+    func restoreSessionIfNeeded(modelContext: ModelContext) async {
+        guard state == .signedOut,
+              let uid = firebaseCurrentUserUIDProvider() else {
+            return
+        }
+
+        guard faceIDSettingsStore.isFaceIDUnlockEnabled,
+              let provider = faceIDSettingsStore.lastAuthenticatedProvider else {
+            resetExternalSignInState()
+            return
+        }
+
+        state = .localUnlockRequired(uid: uid, provider: provider)
+    }
+
+    func unlockWithFaceID(modelContext: ModelContext) async {
+        guard case .localUnlockRequired(let uid, let provider) = state else {
+            return
+        }
+
+        do {
+            try await biometricAuthenticator.authenticateForMailMindUnlock()
+            try await prepareFirebaseAuthForCloud(uid: uid)
+            state = .authenticated(uid: uid, provider: provider)
+            clearLocalCache(modelContext: modelContext)
+            try await loadCloudData(for: uid, modelContext: modelContext)
+        } catch {
+            authError = error.localizedDescription
+        }
+    }
+
+    func signInAgainFromLocalUnlock(modelContext: ModelContext) {
+        resetExternalSignInState()
+        faceIDSettingsStore.clear()
+        isFaceIDUnlockEnabled = false
+        clearLocalCache(modelContext: modelContext)
+        state = .signedOut
+    }
+
+    func enableFaceIDUnlock() {
+        guard case .authenticated(_, let provider) = state else {
+            return
+        }
+
+        guard biometricAuthenticator.canUseFaceID() else {
+            authError = AuthSessionError.faceIDUnavailable.localizedDescription
+            shouldOfferFaceIDUnlock = false
+            return
+        }
+
+        faceIDSettingsStore.lastAuthenticatedProvider = provider
+        setFaceIDUnlockEnabled(true)
+        shouldOfferFaceIDUnlock = false
+    }
+
+    func skipFaceIDUnlockOffer() {
+        shouldOfferFaceIDUnlock = false
+    }
+
+    func updateFaceIDUnlockFromAccount(isEnabled: Bool) async {
+        guard case .authenticated(_, let provider) = state else {
+            setFaceIDUnlockEnabled(false)
+            return
+        }
+
+        if isEnabled {
+            do {
+                try await biometricAuthenticator.authenticateForMailMindUnlock()
+                faceIDSettingsStore.lastAuthenticatedProvider = provider
+                setFaceIDUnlockEnabled(true)
+            } catch {
+                authError = error.localizedDescription
+                setFaceIDUnlockEnabled(false)
+            }
+        } else {
+            setFaceIDUnlockEnabled(false)
+        }
+    }
+
     func signInWithApple(modelContext: ModelContext) async {
         await signIn(provider: .apple, modelContext: modelContext)
     }
@@ -134,12 +364,18 @@ final class AuthSession: ObservableObject {
 
     func signOut(modelContext: ModelContext) {
         resetExternalSignInState()
+        faceIDSettingsStore.clear()
+        isFaceIDUnlockEnabled = false
+        shouldOfferFaceIDUnlock = false
         clearLocalCache(modelContext: modelContext)
         state = .signedOut
     }
 
     func signOutFromPresentedUI(modelContext: ModelContext) {
         resetExternalSignInState()
+        faceIDSettingsStore.clear()
+        isFaceIDUnlockEnabled = false
+        shouldOfferFaceIDUnlock = false
         state = .signedOut
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [weak self] in
             self?.clearLocalCache(modelContext: modelContext)
@@ -209,6 +445,8 @@ final class AuthSession: ObservableObject {
             let uid = try await authenticate(provider: provider)
             try await prepareFirebaseAuthForCloud(uid: uid)
             state = .authenticated(uid: uid, provider: provider)
+            faceIDSettingsStore.lastAuthenticatedProvider = provider
+            isFaceIDUnlockEnabled = faceIDSettingsStore.isFaceIDUnlockEnabled
 
             if wasGuest {
                 try migrateGuestData(to: uid, modelContext: modelContext)
@@ -216,6 +454,10 @@ final class AuthSession: ObservableObject {
             } else {
                 clearLocalCache(modelContext: modelContext)
                 try await loadCloudData(for: uid, modelContext: modelContext)
+            }
+
+            if shouldPromptForFaceIDUnlock(provider: provider) {
+                shouldOfferFaceIDUnlock = true
             }
         } catch {
             authError = error.localizedDescription
@@ -310,7 +552,9 @@ final class AuthSession: ObservableObject {
     }
 
     private func prepareFirebaseAuthForCloud(uid: String) async throws {
-        guard !CommandLine.arguments.contains("-uiTestingMockAuth") else {
+        guard !CommandLine.arguments.contains("-uiTestingMockAuth"),
+              !CommandLine.arguments.contains("-uiTestingExistingAuth"),
+              !skipsFirebaseAuthValidation else {
             return
         }
 
@@ -450,7 +694,26 @@ final class AuthSession: ObservableObject {
     }
 
     private var shouldUseCloudSync: Bool {
-        state.isAuthenticated && !CommandLine.arguments.contains("-uiTestingMockAuth")
+        state.isAuthenticated
+            && !CommandLine.arguments.contains("-uiTestingMockAuth")
+            && !CommandLine.arguments.contains("-uiTestingExistingAuth")
+    }
+
+    private func shouldPromptForFaceIDUnlock(provider: AuthProvider) -> Bool {
+        guard provider != .mock, !faceIDSettingsStore.isFaceIDUnlockEnabled else {
+            return false
+        }
+
+        if CommandLine.arguments.contains("-uiTestingMockAuth") {
+            return CommandLine.arguments.contains("-uiTestingPromptFaceID")
+        }
+
+        return true
+    }
+
+    private func setFaceIDUnlockEnabled(_ isEnabled: Bool) {
+        faceIDSettingsStore.isFaceIDUnlockEnabled = isEnabled
+        isFaceIDUnlockEnabled = isEnabled
     }
 
     private var cloudSyncOwnerID: String? {
